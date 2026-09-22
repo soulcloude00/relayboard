@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeBoard } from "../examples/extensions/relayboard.js";
+import { summarizeBoard } from "../examples/extensions/relayboard.ts";
 
 describe("Relayboard TUI summary", () => {
 	it("counts peers, foreign claims, and unfinished tasks", () => {
