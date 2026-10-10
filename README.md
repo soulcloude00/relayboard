@@ -1,116 +1,71 @@
-<p align="center">
-  <a href="https://pi.dev">
-    <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
-  </a>
-</p>
-<p align="center">
-  <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
-</p>
+# Relayboard
 
-> New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
+**Orchestrators isolate. Relayboard shares.**
 
-# Pi Agent Harness
+Relayboard is a multi-agent coding harness where concurrent threads can see and coordinate around each other's work. It is a fork of [pi](https://github.com/earendil-works/pi), keeping pi's provider support, agent loop, extensions, and terminal UI while adding an in-harness shared coordination layer.
 
-This is the home of the Pi agent harness project including our self extensible coding agent.
+## The problem
 
-* **[@earendil-works/pi-coding-agent](packages/coding-agent)**: Interactive coding agent CLI
-* **[@earendil-works/pi-agent-core](packages/agent)**: Agent runtime with tool calling and state management
-* **[@earendil-works/pi-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
+Running agents in separate worktrees prevents immediate file collisions, but it hides the fact that one thread is redesigning code another thread is building against. Relayboard makes that coordination visible before merge time.
 
-To learn more about Pi:
+Relayboard does **not** promise conflict-free code or automatic merge magic. It gives threads shared facts and enforceable boundaries:
 
-* [Visit pi.dev](https://pi.dev), the project website with demos
-* [Read the documentation](https://pi.dev/docs/latest), but you can also ask the agent to explain itself
+- each thread declares its intent and likely paths;
+- file changes become notices for other threads on their next turn;
+- overlapping file claims are warned or blocked inside the harness;
+- tasks and dependencies live on one shared local board;
+- one TUI shows the threads and board together.
 
-## All Packages
+## Architecture
 
-| Package | Description |
-|---------|-------------|
-| **[@earendil-works/chord](packages/chord)** | Standalone application-composition runtime for services, replicated state, RPC, and plugins |
-| **[@earendil-works/pi-telemetry](packages/telemetry)** | Vendor-neutral telemetry contracts, reference adapter, conformance tests, and typed schemas |
-| **[@earendil-works/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@earendil-works/pi-durable](packages/durable)** | Durable conversation, task, and document runtime |
-| **[@earendil-works/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@earendil-works/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
-| **[@earendil-works/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
-
-For Slack/chat automation and workflows see [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat).
-
-## Permissions & Containerization
-
-Pi does not include a built-in permission system for restricting filesystem, process, network, or credential access. By default, it runs with the permissions of the user and process that launched it.
-
-If you need stronger boundaries, containerize or sandbox Pi. See [packages/coding-agent/docs/containerization.md](packages/coding-agent/docs/containerization.md) for three patterns:
-
-- **Gondolin extension**: keep `pi` and provider auth on the host while routing built-in tools and `!` commands into a local Linux micro-VM.
-- **Plain Docker**: run the whole `pi` process in a local container for simple isolation.
-- **OpenShell**: run the whole `pi` process in a policy-controlled sandbox.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.md](AGENTS.md) for project-specific rules (for both humans and agents).  Longer term plans for Pi can also be found in [RFCs](https://rfc.earendil.com/keyword/pi/).
-
-## Development
-
-```bash
-npm install --ignore-scripts  # Install all dependencies without running lifecycle scripts
-npm run build         # Refresh model data, then build all packages
-npm run build:offline # Rebuild using existing model data without network access
-npm run check         # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./pi-test.sh         # Run pi from sources (can be run from any directory)
+```text
+pi agent threads ââ
+pi agent threads ââ¼ââ local coordinator daemon ââ .relayboard/board.json
+pi agent threads ââ              â
+                                 âââ pi TUI (first client)
 ```
 
-## Building standalone binaries from release source
+The daemon owns thread intents, file claims, change events, and task dependencies. The TUI is the first client, not the coordination engine, so a desktop client can be added later without rewriting the core.
 
-GitHub releases include a versioned source archive covered by the release's `SHA256SUMS` file. Extract it and run the same build script used for the official standalone binaries:
+## Status
+
+Early build. The first milestone contains the local coordinator skeleton and its persisted board model. It already models:
+
+- atomic local state persistence;
+- hierarchical file-claim conflict detection;
+- change events with per-thread cursors;
+- tasks with validated dependencies;
+- a localhost JSON API.
+
+The next milestone wires pi's edit tools and turn lifecycle into these APIs, then adds the multi-thread board view.
+
+## Coordinator API
+
+The coordinator listens on `127.0.0.1:7337` by default.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/state` | read the shared board |
+| `GET` | `/v1/events?since=N&exclude=thread` | read other threads' notices after a cursor |
+| `PUT` | `/v1/threads` | declare a thread's intent and likely paths |
+| `POST` / `DELETE` | `/v1/claims` | claim or release a path; overlaps return `409` |
+| `POST` | `/v1/changes` | publish changed paths |
+| `PUT` | `/v1/tasks` | create or update a task with dependencies |
 
 ```bash
-VERSION="<release-version>"
-tar -xzf "pi-${VERSION}-source.tar.gz"
-cd "pi-${VERSION}"
-./scripts/build-binaries.sh --offline-model-data --platform linux-x64 --out "$PWD/out"
+npm install
+npm run relayboard:test
+npm run relayboard:check
+npm run build --workspace=@relayboard/coordinator
+node packages/coordinator/dist/cli.js
 ```
 
-The archive includes release model data and native prebuilds. `--offline-model-data` uses that model data without refreshing provider catalogs. The script installs dependencies and builds the executable with its runtime assets; pass `--skip-install` if dependencies are already provided.
+## Prior art
 
-## Supply-chain hardening
+[mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail) provides an MCP coordination side-channel with agent mailboxes and file reservations. Relayboard shares the goal of reducing multi-agent collisions. The difference is placement: Relayboard puts claims, change notices, and the task board inside one harness, where its own edit tool can enforce them by default instead of asking unrelated agents to opt into a separate service.
 
-We treat npm dependency changes as reviewed code changes.
+Other orchestrators commonly use worktrees or sandboxes to isolate concurrent agents. Relayboard can still use isolation, but its differentiator is shared live coordination across those threads.
 
-- Direct external dependencies are pinned to exact versions. Internal workspace packages remain version-ranged.
-- `.npmrc` sets `save-exact=true` and `min-release-age=2` to avoid same-day dependency releases during npm resolution.
-- `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1` is set.
-- `npm run check` verifies pinned direct deps, native TypeScript import compatibility, and the generated coding-agent shrinkwrap.
-- The published CLI package includes `packages/coding-agent/npm-shrinkwrap.json`, generated from the root lockfile, to pin transitive deps for npm users.
-- Release smoke tests use `npm run release:local` to build, pack, and create isolated npm and Bun installs outside the repo before tagging a release.
-- Local release installs, documented npm installs, and `pi update --self` use `--ignore-scripts` where supported.
-- CI installs with `npm ci --ignore-scripts`, and a scheduled GitHub workflow runs `npm audit --omit=dev` plus `npm audit signatures --omit=dev`.
-- Shrinkwrap generation has an explicit allowlist for dependency lifecycle scripts; new lifecycle-script deps fail checks until reviewed.
+## Relationship to pi
 
-## Share your OSS coding agent sessions
-
-If you use Pi or other coding agents for open source work, please share your sessions.
-
-Public OSS session data helps improve coding agents with real-world tasks, tool use, failures, and fixes instead of toy benchmarks.
-
-For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
-
-To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). Read its README.md for setup instructions. All you need is a Hugging Face account, the Hugging Face CLI, and `pi-share-hf`.
-
-You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my `pi-mono` sessions.
-
-I regularly publish my own `pi-mono` work sessions here:
-
-- [badlogicgames/pi-mono on Hugging Face](https://huggingface.co/datasets/badlogicgames/pi-mono)
-
-## License
-
-MIT
-
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>
+Relayboard is an independent MIT-licensed fork of pi. It is not affiliated with or endorsed by pi's maintainers. Upstream credit and license history are preserved. The aim is to keep the coordination layer narrow enough that useful pi improvements remain practical to pull forward.
