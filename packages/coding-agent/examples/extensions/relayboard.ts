@@ -9,7 +9,7 @@
  *   pi -e ./packages/coding-agent/examples/extensions/relayboard.ts
  *
  * Environment:
- *   RELAYBOARD_URL       coordinator base URL (default http://127.0.0.1:4317)
+ *   RELAYBOARD_URL       coordinator base URL (default http://127.0.0.1:7337)
  *   RELAYBOARD_THREAD_ID stable thread id (defaults to the pi session id)
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -19,7 +19,7 @@ type Claim = { path: string; threadId: string };
 type Task = { id: string; title: string; status: "open" | "doing" | "done"; owner?: string };
 type BoardState = { threads: Thread[]; claims: Claim[]; tasks: Task[]; sequence: number };
 
-const baseUrl = (process.env.RELAYBOARD_URL ?? "http://127.0.0.1:4317").replace(/\/$/u, "");
+const baseUrl = (process.env.RELAYBOARD_URL ?? "http://127.0.0.1:7337").replace(/\/$/u, "");
 const json = async <T>(path: string, init?: RequestInit): Promise<T> => {
 	const response = await fetch(`${baseUrl}${path}`, {
 		...init,
